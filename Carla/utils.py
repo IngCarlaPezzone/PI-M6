@@ -3,6 +3,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import LabelEncoder
 from matplotlib.colors import LinearSegmentedColormap
+from sklearn.metrics import classification_report
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay
 
 def verificar_tipo_datos(df):
     '''
@@ -48,6 +52,26 @@ def histplot(df, columna, bins=None):
 
     plt.show()
 
+def histplot_categoricas(df, nombres_columnas):
+    ## Crear un grid de 2x2 para los histogramas
+    fig, axes = plt.subplots(2, 2, figsize=(8, 5))
+
+    # Obtener las columnas categóricas
+
+
+    # Iterar a través de las columnas y crear histogramas en cada eje
+    for i, column in enumerate(nombres_columnas):
+        row = i // 2
+        col = i % 2
+        sns.histplot(data=df, x=column, ax=axes[row, col], multiple="dodge")
+
+    # Ajustar los espacios entre los gráficos
+    plt.tight_layout()
+
+    # Mostrar los gráficos
+    plt.show()
+
+
 def countplot(df, columna):
     '''
     Realiza un countplot sencillo para una columna determinada.
@@ -80,6 +104,34 @@ def pairplot(df, hue):
     sns.pairplot(df, hue=hue, diag_kind="hist", palette=['red', 'green'])
     plt.show()
 
+def graficar_balanceo(X_train, X_train_resampled, y_train_resampled):
+    # Crear un DataFrame con los datos de entrenamiento y la columna 'hospitalizacion'
+    df_train_resampled = pd.DataFrame(X_train_resampled, columns=X_train.columns)
+    df_train_resampled['hospitalizacion'] = y_train_resampled
+    
+    countplot_vertical(df_train_resampled, 'hospitalizacion')
+    plt.show()
+
+def reporte_train_test(y_train_ros, y_pred_train, y_test_ros, y_pred_test):
+    # Obtener los reportes de clasificación como strings
+    report_train = classification_report(y_train_ros, y_pred_train, target_names=['NO', 'SI'], output_dict=True)
+    report_test = classification_report(y_test_ros, y_pred_test, target_names=['NO', 'SI'], output_dict=True)
+
+    # Convertir los reportes en DataFrames de pandas
+    df_report_train = pd.DataFrame(report_train).transpose()
+    df_report_test = pd.DataFrame(report_test).transpose()
+
+    # Agregar un nivel de índice a las columnas
+    df_report_train.columns = pd.MultiIndex.from_tuples([('Train', col) for col in df_report_train.columns])
+    df_report_test.columns = pd.MultiIndex.from_tuples([('Test', col) for col in df_report_test.columns])
+    
+    # Concatenar las dos tablas con los niveles de índice en las columnas
+    combined_df = pd.concat([df_report_train, df_report_test], axis=1)
+
+    # Imprimir la tabla combinada
+    print("Reporte de clasificación en el conjunto de entrenamiento y prueba:")
+    return combined_df
+
 def bigote_max(columna):
     '''
     Calcula el valor del bigote máximo y la cantidad de valores que se encuentran como valores atípicos.
@@ -90,10 +142,10 @@ def bigote_max(columna):
 
     # Valor del vigote
     bigote_max = round(q3 + 1.5*(q3 - q1), 2)
-    print('El bigote superior se ubica en:', bigote_max)
+    print(f'El bigote superior de la variable {columna.name} se ubica en:', bigote_max)
 
     # Cantidad de atípicos
-    print('Hay', (columna > bigote_max).sum(), 'valores atípicos.')
+    print(f'Hay {(columna > bigote_max).sum()} valores atípicos en la variable {columna.name}')
     
 def valor_mas_frecuente(df, columna):
     '''
@@ -107,7 +159,7 @@ def valor_mas_frecuente(df, columna):
     total = df[columna].count()
     # Porcentaje de la mayor frecuencia
     porcentaje = round(cantidad/total * 100,2)
-    print(f'Valor mas frecuente es {moda}, con una cantidad de {cantidad} y representa el {porcentaje}%.')
+    print(f'Valor mas frecuente de {columna} es {moda}, con una cantidad de {cantidad} y representa el {porcentaje}%.')
 
 
 def label_encode_categoricals(df):
@@ -208,3 +260,83 @@ def heatmap_categoricas(df):
     plt.tight_layout()
 
     plt.show()
+    
+def plot_corre_heatmap(corr):
+    '''
+    Definimos una función para ayudarnos a graficar un heatmap de correlación
+    '''
+    plt.figure(figsize=(12,10))
+    sns.heatmap(corr, cbar = True,  square = False, annot=True, fmt= '.1f'
+                ,annot_kws={'size': 15},cmap= 'coolwarm')
+    plt.xticks()
+    plt.yticks()
+    # Arreglamos un pequeño problema de visualización
+    b, t = plt.ylim() # discover the values for bottom and top
+    b += 0.5 # Add 0.5 to the bottom
+    t -= 0.5 # Subtract 0.5 from the top
+    plt.ylim(b, t) # update the ylim(bottom, top) values
+    plt.show()
+
+def GridSearch_MatrixConfusion(estimador, param_grid_clf, X_train_ros, y_train_ros, X_test_ros, y_test_ros):
+    # Crea una instancia de GridSearchCV
+    grid_search = GridSearchCV(estimator=estimador, param_grid=param_grid_clf, cv=5)
+
+    # Ajusta el GridSearch al conjunto de datos sobremuestreado
+    grid_search.fit(X_train_ros, y_train_ros)
+
+    # Obtiene el mejor modelo y sus hiperparámetros
+    best_estimador = grid_search.best_estimator_
+    best_params = grid_search.best_params_
+
+    # Evalúa el modelo en el conjunto de prueba
+    y_pred_test = best_estimador.predict(X_test_ros)
+    y_pred_train = best_estimador.predict(X_train_ros)
+
+    # Imprime un reporte de clasificación
+    print("Mejores hiperparámetros:", best_params)
+
+    #Graficar la matriz de confusión para el conjunto de prueba
+    conf_matrix = confusion_matrix(y_test_ros, y_pred_test)
+    cm_display = ConfusionMatrixDisplay(conf_matrix)
+    cm_display.plot()
+    plt.xlabel('Predicciones')
+    plt.ylabel('Verdaderos')
+    plt.show()
+    return y_pred_test, y_pred_train, best_estimador
+
+def GridSearch_model(model, param_grid, X_train, y_train, X_test, y_test):
+    grid_search = GridSearchCV(model, param_grid, cv=5)
+    grid_search.fit(X_train, y_train)
+    
+    best_model = grid_search.best_estimator_
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+    
+    return y_pred_train, y_pred_test, best_model
+
+def resumen_metricas_PCA(results, y_train_ros, y_test_ros):
+    # Crear una lista de diccionarios para almacenar los resultados
+    summary_results = []
+
+    # Resumir métricas de forma más concisa y almacenar en la lista
+    for n, models in results.items():
+        for model_name, (y_train_pred, y_test_pred, best_model) in models.items():
+            report_train = classification_report(y_train_ros, y_train_pred, output_dict=True)
+            report_test = classification_report(y_test_ros, y_test_pred, output_dict=True)
+            
+            summary_results.append({
+                'Components': n,
+                'Model': model_name,
+                'Train_Precision': report_train["macro avg"]["precision"],
+                'Train_Recall': report_train["macro avg"]["recall"],
+                'Train_F1': report_train["macro avg"]["f1-score"],
+                'Test_Precision': report_test["macro avg"]["precision"],
+                'Test_Recall': report_test["macro avg"]["recall"],
+                'Test_F1': report_test["macro avg"]["f1-score"]
+            })
+
+    # Crear un DataFrame a partir de la lista de resultados
+    df_summary = pd.DataFrame(summary_results)
+
+    # Imprimir el DataFrame
+    return df_summary
